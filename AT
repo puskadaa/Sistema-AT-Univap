@@ -1,0 +1,309 @@
+import os
+import pandas as pd
+from prettytable import PrettyTable
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib.colors import red, blue, black
+
+
+def tratar(v):
+    if pd.isna(v) or str(v).strip() == "":
+        return "NÃO INFORMADA"
+    try:
+        return f"{float(v):.1f}"
+    except:
+        return str(v)
+
+
+def cor_html(nota):
+    if nota == "NÃO INFORMADA":
+        return f"<span style='color:gray;font-style:italic'>{nota}</span>"
+    try:
+        f = float(str(nota).replace(",", "."))
+        if f >= 6:
+            return f"<span style='color:#0070f3;font-weight:bold'>{f:.1f}</span>"
+        else:
+            return f"<span style='color:#d90429;font-weight:bold'>{f:.1f}</span>"
+    except:
+        return nota
+
+
+def cor_pdf(c, x, y, nota):
+    if nota == "NÃO INFORMADA":
+        c.setFillColor(black)
+        c.drawString(x, y, nota)
+        return
+    try:
+        f = float(str(nota).replace(",", "."))
+        c.setFillColor(blue if f >= 6 else red)
+    except:
+        c.setFillColor(black)
+    c.drawString(x, y, str(nota))
+
+
+def calcular_media(disciplinas):
+    soma = 0.0
+    qtd = 0
+    for _, n in disciplinas:
+        qtd += 1
+        if n == "NÃO INFORMADA":
+            soma += 0.0
+        else:
+            try:
+                soma += float(str(n).replace(",", "."))
+            except:
+                soma += 0.0
+    if qtd == 0:
+        return "0.0"
+    media = soma / qtd
+    return f"{media:.1f}"
+
+
+def gerar_pdf(matricula, nome, turma, disciplinas, media, status):
+    os.makedirs("output/pdfs", exist_ok=True)
+    matricula_limpa = str(matricula).replace(".0", "")
+    caminho = f"output/pdfs/{matricula_limpa}.pdf"
+    c = canvas.Canvas(caminho, pagesize=A4)
+    w, h = A4
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(w / 2, h - 40 * mm, "Colégio Técnico Univap")
+    c.setFont("Helvetica-Bold", 13)
+    c.drawCentredString(w / 2, h - 50 * mm, f"Ficha Técnica - {nome}")
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 60 * mm, f"Matrícula: {matricula_limpa}")
+    c.drawString(110 * mm, h - 60 * mm, f"Turma: {turma}")
+    c.drawString(25 * mm, h - 67 * mm, f"Status: {status}")
+
+    y = h - 80 * mm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(25 * mm, y, "Disciplina")
+    c.drawString(150 * mm, y, "Nota")
+    y -= 10
+    c.setFont("Helvetica", 10)
+    for d, n in disciplinas:
+        if y < 30 * mm:
+            c.showPage()
+            y = h - 30 * mm
+            c.setFont("Helvetica", 10)
+        c.setFillColor(black)
+        c.drawString(25 * mm, y, str(d))
+        cor_pdf(c, 150 * mm, y, n)
+        y -= 12
+
+    y -= 8
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(25 * mm, y, "MÉDIA AT:")
+    cor_pdf(c, 150 * mm, y, media)
+    c.save()
+
+
+def gerar_html(matricula, nome, turma, disciplinas, media, status, linha_excel):
+    import base64, os
+
+    os.makedirs("output/html", exist_ok=True)
+    matricula_limpa = str(matricula).replace(".0", "")
+    cor_status = "#4da3ff" if status.upper().startswith("MATRIC") else "#ff5c5c"
+
+    # Logo Univap base64 (imagem compacta branca)
+    logo_b64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAMgAAABdCAYAAABYy5AOAAAABHNCSVQICAgIfAhkiAAA..."
+        # (coloque aqui um base64 real do logo branco da Univap, se quiser — posso gerar um pra você)
+    )
+
+    # Cabeçalho da tabela
+    cabecalhos = "<tr><th>Código Aluno</th><th>Nome</th><th>Turma</th>"
+    for d, _ in disciplinas:
+        cabecalhos += f"<th>{d}</th>"
+    cabecalhos += "<th>MÉDIA AT</th><th>Status</th></tr>"
+
+    # Linha de dados
+    linha = "<tr>"
+    linha += f"<td>{matricula_limpa}</td>"
+    linha += f"<td>{nome}</td>"
+    linha += f"<td>{turma}</td>"
+    for _, n in disciplinas:
+        if n == "NÃO INFORMADA":
+            cor = "gray"
+            display = "NÃO INFORMADA"
+        else:
+            try:
+                val = float(str(n).replace(",", "."))
+                cor = "#4da3ff" if val >= 6 else "#ff5c5c"
+                display = f"{val:.1f}"
+            except:
+                cor = "gray"
+                display = str(n)
+        linha += f"<td style='color:{cor};font-weight:bold;text-align:center'>{display}</td>"
+    linha += f"<td style='text-align:center;font-weight:bold'>{cor_html(media)}</td>"
+    linha += f"<td style='color:{cor_status};font-weight:bold;text-align:center'>{status}</td>"
+    linha += "</tr>"
+
+    conteudo = f"""
+    <html><head><meta charset='utf-8'><title>{matricula_limpa}</title>
+    <style>
+      body {{
+        font-family: 'Segoe UI', Arial, sans-serif;
+        background: radial-gradient(circle at top left, #0a0e2a, #0d163a 40%, #08142b 100%);
+        color: #eaeaea;
+        padding: 50px;
+      }}
+      .card {{
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 18px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 10px 35px rgba(0,0,0,0.4);
+        max-width: 1100px;
+        margin: auto;
+        padding: 40px;
+        transition: 0.3s ease;
+      }}
+      .card:hover {{
+        transform: scale(1.01);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+      }}
+      .logo {{
+        display: block;
+        margin: auto;
+        width: 180px;
+        filter: brightness(0) invert(1);
+        opacity: 0.9;
+      }}
+      h2 {{
+        text-align: center;
+        color: #58a6ff;
+        font-size: 26px;
+        margin: 12px 0 8px 0;
+        text-shadow: 0 0 10px rgba(88,166,255,0.4);
+      }}
+      h3 {{
+        text-align: center;
+        color: #fff;
+        font-size: 20px;
+        margin-top: 0;
+      }}
+      p.info {{
+        text-align: center;
+        color: #b0c4de;
+        font-style: italic;
+        margin-bottom: 25px;
+      }}
+      table {{
+        width: 100%;
+        border-collapse: collapse;
+        border-radius: 8px;
+        overflow: hidden;
+      }}
+      th {{
+        background: rgba(24,40,80,0.9);
+        color: #bcd4ff;
+        padding: 10px;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+      }}
+      td {{
+        padding: 9px;
+        text-align: center;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }}
+      tr:hover {{
+        background: rgba(255,255,255,0.08);
+      }}
+      .pdf-link {{
+        text-align: center;
+        margin-top: 30px;
+      }}
+      .pdf-link a {{
+        background: linear-gradient(90deg, #007bff, #339cff);
+        color: white;
+        padding: 14px 28px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 15px;
+        letter-spacing: 0.5px;
+        transition: all 0.3s;
+        box-shadow: 0 0 14px rgba(0,123,255,0.4);
+      }}
+      .pdf-link a:hover {{
+        background: linear-gradient(90deg, #339cff, #66b3ff);
+        box-shadow: 0 0 25px rgba(51,156,255,0.7);
+        transform: scale(1.03);
+      }}
+    </style></head><body>
+    <div class='card'>
+      <img src="../../imagens/univap3.png" alt="Logo Univap" class="logo">
+      <h2>Colégio Técnico Univap</h2>
+      <h3>Ficha Técnica - {nome}</h3>
+      <p class='info'>Aluno localizado na <b>linha {linha_excel}</b> da planilha.</p>
+      <table>
+        {cabecalhos}
+        {linha}
+      </table>
+      <div class="pdf-link">
+        <a href="../pdfs/{matricula_limpa}.pdf" target="_blank">📄 Gerar Documento</a>
+      </div>
+    </div>
+    </body></html>
+    """
+
+    with open(f"output/html/{matricula_limpa}.html", "w", encoding="utf-8") as f:
+        f.write(conteudo)
+
+
+
+
+
+def processar_excel(arq):
+    try:
+        df = pd.read_excel(arq, engine="openpyxl")
+    except Exception as e:
+        print("Erro ao abrir o arquivo Excel:", e)
+        return
+
+    cols = list(df.columns)
+    if len(cols) < 4:
+        print("❌ A planilha precisa ter pelo menos: Código, Nome, Turma e uma nota.")
+        return
+
+    codigo_col, nome_col, turma_col, status_col = cols[0], cols[1], cols[2], cols[-1]
+    nota_cols = [c for c in cols[3:-1] if "MÉDIA" not in str(c).upper()]
+
+    lista_alunos = []
+
+    for i, row in df.iterrows():
+        linha_excel = i + 2
+        matricula = tratar(row[codigo_col])
+        nome = str(row[nome_col])
+        turma = str(row[turma_col])
+        status = str(row[status_col]).strip() if not pd.isna(row[status_col]) else "NÃO INFORMADO"
+
+        disciplinas = [(c, tratar(row[c])) for c in nota_cols]
+        media = calcular_media(disciplinas)
+
+        gerar_html(matricula, nome, turma, disciplinas, media, status, linha_excel)
+        gerar_pdf(matricula, nome, turma, disciplinas, media, status)
+        lista_alunos.append((matricula, nome))
+
+        print(f"\nAluno na linha {linha_excel}: {nome} | Status: {status}")
+        t = PrettyTable()
+        t.field_names = ["Disciplina", "Nota"]
+        for d, n in disciplinas:
+            t.add_row([d, n])
+        t.add_row(["MÉDIA AT", media])
+        print(t)
+
+    print("\n✅ Relatórios gerados com sucesso!")
+
+
+if __name__ == "__main__":
+    print("Digite o nome da planilha Excel (ex: notas.xlsx):")
+    arquivo = input("👉 ").strip()  # Usuário digita o nome
+
+    if not os.path.exists(arquivo):
+        print(f"❌ Arquivo '{arquivo}' não encontrado na pasta atual.")
+    else:
+        processar_excel(arquivo)
+        print("\n✅ Relatórios gerados com sucesso!")
